@@ -1,3 +1,4 @@
 pywin32
 PyPDF2
 pyinstaller
+Pillow

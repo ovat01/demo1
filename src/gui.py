@@ -1,9 +1,21 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
+import sys
+from PIL import Image, ImageTk
 from printing import get_printers, print_pdf
 from file_monitor import FileMonitor
 from config import save_config, load_config
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -18,6 +30,17 @@ class Application(tk.Frame):
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
+        # Logo
+        try:
+            logo_path = resource_path("assets/logo.png")
+            logo_image = Image.open(logo_path)
+            logo_image = logo_image.resize((250, 60), Image.Resampling.LANCZOS)
+            self.logo_photo = ImageTk.PhotoImage(logo_image)
+            logo_label = ttk.Label(self, image=self.logo_photo)
+            logo_label.pack(pady=10)
+        except Exception as e:
+            print(f"No se pudo cargar el logo: {e}")
+
         # Frame for controls
         control_frame = ttk.Frame(self)
         control_frame.pack(padx=10, pady=10, fill="x")
