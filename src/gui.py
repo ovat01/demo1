@@ -4,17 +4,9 @@ import os
 import sys
 from datetime import datetime
 from PIL import Image, ImageTk
-from printing import get_printers, print_pdf
+from printing import get_printers, print_pdf, resource_path
 from file_monitor import FileMonitor
 from config import save_config, load_config
-
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -32,7 +24,7 @@ class Application(tk.Frame):
     def create_widgets(self):
         # Logo
         try:
-            logo_path = resource_path("assets/logo.png")
+            logo_path = resource_path(os.path.join("assets", "logo.png"))
             logo_image = Image.open(logo_path)
             logo_image = logo_image.resize((250, 60), Image.Resampling.LANCZOS)
             self.logo_photo = ImageTk.PhotoImage(logo_image)

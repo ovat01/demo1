@@ -1,7 +1,16 @@
 import win32print
-import win32api
 import os
-import time
+import sys
+import subprocess
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 def get_printers():
     """Returns a list of available printers."""
@@ -14,39 +23,41 @@ def get_printers():
 
 def print_pdf(file_path, printer_name):
     """
-    Prints a PDF by temporarily setting the default printer, printing,
-    and then restoring the original default printer.
+    Prints a PDF file directly using SumatraPDF command-line tool.
+    This method is highly reliable and independent of Windows shell associations.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"El archivo no se encuentra: {file_path}")
 
-    original_printer = None
     try:
-        # 1. Get and save the original default printer
-        original_printer = win32print.GetDefaultPrinter()
+        # Locate the SumatraPDF executable within the project
+        sumatra_path = resource_path(os.path.join("vendor", "SumatraPDF.exe"))
 
-        # 2. Set the selected printer as the new default
-        win32print.SetDefaultPrinter(printer_name)
+        if not os.path.exists(sumatra_path):
+            raise FileNotFoundError(f"SumatraPDF.exe not found at {sumatra_path}")
 
-        # 3. Send the generic print command. Windows will use the new default printer.
-        win32api.ShellExecute(
-            0,
-            "print",
-            f'"{os.path.abspath(file_path)}"',
-            None,
-            ".",
-            0
-        )
+        # Command to print silently to a specific printer
+        command = [
+            sumatra_path,
+            '-print-to', printer_name,
+            '-silent',
+            '-exit-when-done',
+            os.path.abspath(file_path)
+        ]
 
-        # Give the print spooler a moment to process the job before restoring
-        time.sleep(3)
+        # Execute the command without showing a console window
+        # We use a timeout to prevent the process from hanging indefinitely
+        subprocess.run(command, check=True, timeout=120,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
 
+    except FileNotFoundError as e:
+        raise e # Re-raise to be specific in the error message
+    except subprocess.TimeoutExpired:
+        raise Exception("El proceso de impresión tardó demasiado en responder.")
+    except subprocess.CalledProcessError as e:
+        # This error is raised if SumatraPDF returns a non-zero exit code (an error)
+        raise Exception(f"SumatraPDF.exe encontró un error al imprimir: {e}")
     except Exception as e:
-        print(f"An error occurred during printing: {e}")
-        # Re-raise the exception to be caught by the GUI
+        # Catch any other unexpected errors
+        print(f"An unexpected error occurred during printing: {e}")
         raise
-
-    finally:
-        # 4. ALWAYS restore the original default printer
-        if original_printer:
-            win32print.SetDefaultPrinter(original_printer)
