@@ -1,9 +1,20 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
+import sys
+from datetime import datetime
+from PIL import Image, ImageTk
 from printing import get_printers, print_pdf
 from file_monitor import FileMonitor
 from config import save_config, load_config
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -12,17 +23,27 @@ class Application(tk.Frame):
         self.master.title("Reimpresión de Boletas")
         self.pack(fill="both", expand=True)
         self.file_monitor = None
+        self.found_files = {}  # Dictionary to store filename -> full_path
         self.create_widgets()
         self.load_printers()
         self.load_initial_config()
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
-        # Frame for controls
-        control_frame = ttk.Frame(self)
-        control_frame.pack(padx=10, pady=10, fill="x")
+        # Logo
+        try:
+            logo_path = resource_path("assets/logo.png")
+            logo_image = Image.open(logo_path)
+            logo_image = logo_image.resize((250, 60), Image.Resampling.LANCZOS)
+            self.logo_photo = ImageTk.PhotoImage(logo_image)
+            logo_label = ttk.Label(self, image=self.logo_photo)
+            logo_label.pack(pady=10)
+        except Exception as e:
+            print(f"No se pudo cargar el logo: {e}")
 
-        # Folder selection
+        # Folder selection frame
+        control_frame = ttk.Frame(self)
+        control_frame.pack(padx=10, pady=5, fill="x")
         self.folder_label = ttk.Label(control_frame, text="Carpeta de Boletas:")
         self.folder_label.pack(side="left")
         self.folder_path = tk.StringVar()
@@ -30,6 +51,25 @@ class Application(tk.Frame):
         self.folder_entry.pack(side="left", padx=5, expand=True, fill="x")
         self.browse_button = ttk.Button(control_frame, text="Seleccionar Carpeta", command=self.browse_folder)
         self.browse_button.pack(side="left")
+
+        # Date filter frame
+        date_frame = ttk.Frame(self)
+        date_frame.pack(padx=10, pady=5, fill="x")
+
+        self.start_date_label = ttk.Label(date_frame, text="Fecha Desde:")
+        self.start_date_label.pack(side="left")
+        self.start_date = tk.StringVar(value=datetime.now().strftime('%Y%m%d'))
+        self.start_date_entry = ttk.Entry(date_frame, textvariable=self.start_date, width=12)
+        self.start_date_entry.pack(side="left", padx=5)
+
+        self.end_date_label = ttk.Label(date_frame, text="Fecha Hasta:")
+        self.end_date_label.pack(side="left", padx=10)
+        self.end_date = tk.StringVar(value=datetime.now().strftime('%Y%m%d'))
+        self.end_date_entry = ttk.Entry(date_frame, textvariable=self.end_date, width=12)
+        self.end_date_entry.pack(side="left", padx=5)
+
+        self.filter_button = ttk.Button(date_frame, text="Buscar", command=self.update_pdf_list)
+        self.filter_button.pack(side="left", padx=10)
 
         # PDF list
         self.pdf_list_frame = ttk.Frame(self)
@@ -72,7 +112,7 @@ class Application(tk.Frame):
             self.printer_combo.set(printer)
 
     def browse_folder(self):
-        """Opens a dialog to select a folder and lists the PDFs."""
+        """Opens a dialog to select a folder and triggers a PDF list update."""
         folder_selected = filedialog.askdirectory()
         if folder_selected:
             self.folder_path.set(folder_selected)
@@ -89,22 +129,41 @@ class Application(tk.Frame):
         self.file_monitor.start()
 
     def update_pdf_list(self):
-        """Updates the listbox with PDF files from the selected folder."""
+        """Schedules the listbox update from the main thread."""
         self.master.after(0, self._update_listbox)
 
     def _update_listbox(self):
-        """The actual update logic for the listbox."""
+        """Finds PDFs recursively, filters them by date, and updates the listbox."""
         self.pdf_listbox.delete(0, tk.END)
+        self.found_files.clear()
+
         folder = self.folder_path.get()
         if not folder or not os.path.isdir(folder):
             return
 
         try:
-            files = [f for f in os.listdir(folder) if f.lower().endswith('.pdf')]
+            start_date_str = self.start_date.get()
+            end_date_str = self.end_date.get()
+            start_date = datetime.strptime(start_date_str, '%Y%m%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y%m%d').date()
+        except ValueError:
+            messagebox.showerror("Fecha Inválida", "El formato de fecha debe ser YYYYMMDD.")
+            return
+
+        for root, _, files in os.walk(folder):
             for file in files:
-                self.pdf_listbox.insert(tk.END, file)
-        except Exception as e:
-            messagebox.showerror("Error al leer la carpeta", f"No se pudo acceder a la carpeta: {e}")
+                if file.lower().endswith('.pdf'):
+                    try:
+                        # Assuming date is at the start of the filename, e.g., "20251021..."
+                        file_date_str = file[:8]
+                        file_date = datetime.strptime(file_date_str, '%Y%m%d').date()
+                        if start_date <= file_date <= end_date:
+                            full_path = os.path.join(root, file)
+                            self.found_files[file] = full_path
+                            self.pdf_listbox.insert(tk.END, file)
+                    except (ValueError, IndexError):
+                        # Filename does not match the expected date format, skip it
+                        continue
 
     def reprint_selected_pdf(self):
         """Prints the selected PDF to the selected printer."""
@@ -120,7 +179,10 @@ class Application(tk.Frame):
             messagebox.showwarning("Selección Requerida", "Por favor, seleccione una impresora.")
             return
 
-        file_path = os.path.join(self.folder_path.get(), selected_file)
+        file_path = self.found_files.get(selected_file)
+        if not file_path:
+            messagebox.showerror("Error", "No se encontró la ruta completa del archivo.")
+            return
 
         try:
             print_pdf(file_path, printer_name)
