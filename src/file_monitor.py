@@ -25,19 +25,24 @@ class FileMonitor:
             self._thread.join()
 
     def _get_current_pdfs(self):
-        """Gets the set of PDF files currently in the folder."""
+        """Gets the set of PDF files currently in the folder and all subfolders."""
+        pdf_files = set()
         try:
-            return set(f for f in os.listdir(self._folder_path) if f.lower().endswith('.pdf'))
+            for root, _, files in os.walk(self._folder_path):
+                for file in files:
+                    if file.lower().endswith('.pdf'):
+                        pdf_files.add(os.path.join(root, file))
         except FileNotFoundError:
             return set()
+        return pdf_files
 
     def _monitor(self):
         """The core monitoring loop that runs in the background."""
         while self._running:
             time.sleep(5)  # Check for new files every 5 seconds
             current_files = self._get_current_pdfs()
-            new_files = current_files - self._seen_files
 
-            if new_files:
+            # Check if there's any change (new files or removed files)
+            if current_files != self._seen_files:
                 self._seen_files = current_files
                 self._callback()  # Notify the GUI to update the list
