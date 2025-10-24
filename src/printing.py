@@ -6,7 +6,6 @@ import subprocess
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
@@ -23,41 +22,36 @@ def get_printers():
 
 def print_pdf(file_path, printer_name):
     """
-    Prints a PDF file directly using SumatraPDF command-line tool.
-    This method is highly reliable and independent of Windows shell associations.
+    Prints a PDF file directly using SumatraPDF, wrapping arguments in quotes
+    to handle complex names and paths reliably.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"El archivo no se encuentra: {file_path}")
 
     try:
-        # Locate the SumatraPDF executable within the project
         sumatra_path = resource_path(os.path.join("vendor", "SumatraPDF.exe"))
-
         if not os.path.exists(sumatra_path):
             raise FileNotFoundError(f"SumatraPDF.exe not found at {sumatra_path}")
 
-        # Command to print silently to a specific printer
-        command = [
-            sumatra_path,
-            '-print-to', printer_name,
-            '-silent',
-            '-exit-when-done',
-            os.path.abspath(file_path)
-        ]
+        # Construct the command as a single string with explicit quotes
+        # This is the most reliable way to handle names with spaces and special characters.
+        command = (
+            f'"{sumatra_path}" '
+            f'-print-to "{printer_name}" '
+            f'-silent -exit-when-done '
+            f'"{os.path.abspath(file_path)}"'
+        )
 
-        # Execute the command without showing a console window
-        # We use a timeout to prevent the process from hanging indefinitely
+        # Execute the command using shell=True, which correctly interprets the quoted string
         subprocess.run(command, check=True, timeout=120,
-                       creationflags=subprocess.CREATE_NO_WINDOW)
+                       creationflags=subprocess.CREATE_NO_WINDOW, shell=True)
 
     except FileNotFoundError as e:
-        raise e # Re-raise to be specific in the error message
+        raise e
     except subprocess.TimeoutExpired:
         raise Exception("El proceso de impresión tardó demasiado en responder.")
     except subprocess.CalledProcessError as e:
-        # This error is raised if SumatraPDF returns a non-zero exit code (an error)
-        raise Exception(f"SumatraPDF.exe encontró un error al imprimir: {e}")
+        raise Exception(f"SumatraPDF.exe encontró un error al imprimir. Verifique la impresora y el archivo.\nError: {e}")
     except Exception as e:
-        # Catch any other unexpected errors
-        print(f"An unexpected error occurred during printing: {e}")
+        print(f"Ocurrió un error inesperado durante la impresión: {e}")
         raise
