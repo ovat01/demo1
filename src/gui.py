@@ -10,7 +10,6 @@ import threading
 from printing import get_printers, print_pdf, resource_path
 from file_monitor import FileMonitor
 from config import save_config, load_config
-# Updated import to get the new parsing function
 from pdf_parser import extract_data_from_pdf
 
 class Application(tk.Frame):
@@ -18,11 +17,9 @@ class Application(tk.Frame):
         super().__init__(master)
         self.master = master
         self.master.title("Reimpresión de Boletas")
-        # Set a minimum size for the window
-        self.master.minsize(650, 500)
+        self.master.minsize(700, 500)
         self.pack(fill="both", expand=True)
         self.file_monitor = None
-        # This dictionary will now store full PDF data: item_id -> { 'path': ..., 'data': ... }
         self.found_files = {}
         self.create_widgets()
         self.load_printers()
@@ -30,7 +27,6 @@ class Application(tk.Frame):
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
-        # --- Logo ---
         try:
             logo_path = resource_path(os.path.join("assets", "logo.png"))
             logo_image = Image.open(logo_path)
@@ -41,12 +37,9 @@ class Application(tk.Frame):
         except Exception as e:
             print(f"No se pudo cargar el logo: {e}")
 
-        # --- Control Frame (Folder and Dates) ---
         control_frame = ttk.Frame(self)
         control_frame.pack(padx=10, pady=5, fill="x")
 
-        # --- Folder Selection ---
-        # Using a folder icon for the button
         try:
             folder_icon_path = resource_path(os.path.join("assets", "folder.png"))
             folder_icon_image = Image.open(folder_icon_path).resize((24, 24), Image.Resampling.LANCZOS)
@@ -57,12 +50,9 @@ class Application(tk.Frame):
             self.browse_button = ttk.Button(control_frame, text="Seleccionar Carpeta", command=self.browse_folder)
         self.browse_button.pack(side="left", padx=(0, 10))
         self.folder_path = tk.StringVar()
-        # Non-editable label to show the selected path
         self.folder_label = ttk.Label(control_frame, text="No se ha seleccionado ninguna carpeta", foreground="grey", anchor="w")
         self.folder_label.pack(side="left", fill="x", expand=True)
 
-
-        # --- Date Selection Frame ---
         date_frame = ttk.Frame(self)
         date_frame.pack(padx=10, pady=5, fill="x")
 
@@ -85,20 +75,22 @@ class Application(tk.Frame):
         self.filter_button = ttk.Button(date_frame, text="Buscar", command=self.update_pdf_list)
         self.filter_button.pack(side="left", padx=10)
 
-
-        # --- PDF List (Treeview) ---
         pdf_list_frame = ttk.Frame(self)
         pdf_list_frame.pack(padx=10, pady=10, fill="both", expand=True)
-        # Updated columns to show "Boleta" and "Monto Total"
-        columns = ("boleta", "total")
+
+        columns = ("fecha", "boleta", "total")
         self.pdf_tree = ttk.Treeview(pdf_list_frame, columns=columns, show="headings")
+
+        self.pdf_tree.heading("fecha", text="Fecha")
         self.pdf_tree.heading("boleta", text="Boleta")
         self.pdf_tree.heading("total", text="Monto Total")
+
+        self.pdf_tree.column("fecha", width=120, anchor="center")
         self.pdf_tree.column("boleta", width=200, anchor="center")
         self.pdf_tree.column("total", width=150, anchor="e")
+
         self.pdf_tree.pack(fill="both", expand=True)
 
-        # --- Printer Selection and Reprint Button ---
         self.printer_frame = ttk.Frame(self)
         self.printer_frame.pack(padx=10, pady=10, fill="x")
         self.printer_label = ttk.Label(self.printer_frame, text="Seleccionar Impresora:")
@@ -139,7 +131,7 @@ class Application(tk.Frame):
         folder, printer = load_config()
         if folder and os.path.isdir(folder):
             self.folder_path.set(folder)
-            self.folder_label.config(text=folder, foreground="black") # Update label
+            self.folder_label.config(text=folder, foreground="black")
             self.update_pdf_list()
             self.start_monitoring(folder)
         if printer and printer in self.printer_combo['values']:
@@ -149,7 +141,7 @@ class Application(tk.Frame):
         folder_selected = filedialog.askdirectory()
         if folder_selected:
             self.folder_path.set(folder_selected)
-            self.folder_label.config(text=folder_selected, foreground="black") # Update label
+            self.folder_label.config(text=folder_selected, foreground="black")
             self.update_pdf_list()
             self.start_monitoring(folder_selected)
             self.save_current_config()
@@ -176,7 +168,6 @@ class Application(tk.Frame):
         try:
             start_date_str = self.start_date.get()
             end_date_str = self.end_date.get()
-            # Dates are now in DD-MM-YYYY
             start_date = datetime.strptime(start_date_str, '%d-%m-%Y').date()
             end_date = datetime.strptime(end_date_str, '%d-%m-%Y').date()
         except ValueError:
@@ -184,34 +175,43 @@ class Application(tk.Frame):
             self.master.after(0, lambda: self.filter_button.config(state="normal"))
             return
 
-        # Walk through all files and subdirectories
+        temp_file_list = []
         for root, _, files in os.walk(folder):
             for file in files:
                 if file.lower().endswith('.pdf'):
                     full_path = os.path.join(root, file)
-                    # Extract data from the PDF content
                     pdf_data = extract_data_from_pdf(full_path)
 
                     if 'error' in pdf_data or pdf_data['fecha'] == 'No encontrado' or pdf_data['fecha'] == 'Fecha inválida':
-                        continue # Skip files that couldn't be parsed
+                        continue
 
                     try:
-                        # The parser returns date as YYYY-MM-DD
                         file_date = datetime.strptime(pdf_data['fecha'], '%Y-%m-%d').date()
-
-                        # Filter based on the date from the PDF content
                         if start_date <= file_date <= end_date:
-                            # Schedule the UI update in the main thread
-                            self.master.after(0, self.add_pdf_to_tree, full_path, pdf_data)
+                            temp_file_list.append({'path': full_path, 'data': pdf_data})
                     except ValueError:
                         continue
 
-        self.master.after(0, lambda: self.filter_button.config(state="normal"))
+        # Sort the list by date in descending order (newest first)
+        # The key is the 'fecha' from the PDF data, which is in YYYY-MM-DD format.
+        temp_file_list.sort(key=lambda item: item['data']['fecha'], reverse=True)
 
-    def add_pdf_to_tree(self, full_path, pdf_data):
-        """Helper to add a row to the treeview in the main thread."""
-        item_id = self.pdf_tree.insert("", "end", values=(pdf_data['boleta'], pdf_data['total']))
-        self.found_files[item_id] = {'path': full_path, 'data': pdf_data}
+        # Schedule the UI update in the main thread with the sorted list
+        self.master.after(0, self.populate_tree, temp_file_list)
+
+    def populate_tree(self, file_list):
+        for i in self.pdf_tree.get_children():
+            self.pdf_tree.delete(i)
+        self.found_files.clear()
+
+        for item in file_list:
+            pdf_data = item['data']
+            display_date = datetime.strptime(pdf_data['fecha'], '%Y-%m-%d').strftime('%d-%m-%Y')
+
+            item_id = self.pdf_tree.insert("", "end", values=(display_date, pdf_data['boleta'], pdf_data['total']))
+            self.found_files[item_id] = {'path': item['path'], 'data': pdf_data}
+
+        self.filter_button.config(state="normal")
 
     def reprint_selected_pdf(self):
         selected_item = self.pdf_tree.focus()
@@ -219,7 +219,6 @@ class Application(tk.Frame):
             messagebox.showwarning("Selección Requerida", "Por favor, seleccione una boleta para reimprimir.")
             return
 
-        # Retrieve the full path from our dictionary
         full_path = self.found_files[selected_item]['path']
         printer_name = self.printer_combo.get()
 
