@@ -4,8 +4,8 @@ from datetime import datetime
 
 def extract_data_from_pdf(file_path):
     """
-    Opens a PDF, extracts its text, and searches for boleta number, date, and total amount
-    with more flexible regular expressions.
+    Opens a PDF, extracts its text line by line, and searches for boleta number,
+    date, and total amount with high precision.
     """
     data = {
         'boleta': 'No encontrado',
@@ -16,38 +16,47 @@ def extract_data_from_pdf(file_path):
         doc = fitz.open(file_path)
         full_text = ""
         for page in doc:
-            # Using page.get_text("text", flags=fitz.TEXT_INHIBIT_SPACES) might help with layout
             full_text += page.get_text("text")
         doc.close()
 
-        # Regex for Boleta: Looks for "BOLETA", allows optional colon, and captures the number.
-        # The [\s:]* part allows for any combination of whitespace and colons.
-        boleta_match = re.search(r'BOLETA[\s:]*(\d+)', full_text, re.IGNORECASE)
-        if boleta_match:
-            data['boleta'] = boleta_match.group(1).strip()
+        # Process the text line by line for better accuracy
+        lines = full_text.split('\n')
 
-        # Regex for Fecha: More flexible, allows for different separators.
-        fecha_match = re.search(r'FECHA[\s:]*(\d{2}[-/]\d{2}[-/]\d{4})', full_text, re.IGNORECASE)
-        if fecha_match:
-            try:
-                # Normalize date string by replacing separators
-                date_str = fecha_match.group(1).strip().replace('/', '-')
-                date_obj = datetime.strptime(date_str, '%d-%m-%Y')
-                data['fecha'] = date_obj.strftime('%Y-%m-%d')
-            except ValueError:
-                data['fecha'] = 'Fecha inválida'
+        for line in lines:
+            line_upper = line.upper()
 
-        # Regex for Total: Allows for more variations in spacing and symbols.
-        total_match = re.search(r'Monto Total\s*\$?\s*:?\s*([\d.,]+)', full_text, re.IGNORECASE)
-        if total_match:
-            amount_str = total_match.group(1).strip()
-            # Clean the amount string by removing thousand separators (dots or commas)
-            # and handling potential decimal commas.
-            cleaned_amount = amount_str.replace('.', '').replace(',', '')
-            if cleaned_amount.isdigit():
-                data['total'] = f"${int(cleaned_amount):,}".replace(",",".") # Format with dots
-            else:
-                data['total'] = amount_str # Fallback to original string if not a simple integer
+            # --- Find Boleta Number ---
+            if 'BOLETA' in line_upper:
+                # Find all numbers in the line and take the last one.
+                # This is robust against other numbers appearing before the actual boleta number.
+                numbers = re.findall(r'\d+', line)
+                if numbers:
+                    data['boleta'] = numbers[-1]
+
+            # --- Find Date ---
+            if 'FECHA' in line_upper:
+                 # Search for a date pattern DD-MM-YYYY or DD/MM/YYYY
+                match = re.search(r'(\d{2}[-/]\d{2}[-/]\d{4})', line)
+                if match:
+                    try:
+                        date_str = match.group(1).replace('/', '-')
+                        date_obj = datetime.strptime(date_str, '%d-%m-%Y')
+                        data['fecha'] = date_obj.strftime('%Y-%m-%d')
+                    except ValueError:
+                        data['fecha'] = 'Fecha inválida'
+
+            # --- Find Total Amount ---
+            if 'MONTO TOTAL' in line_upper:
+                # Find the number following the keyword in the same line.
+                match = re.search(r'[\d.,]+', line)
+                if match:
+                    amount_str = match.group(0).strip()
+                    cleaned_amount = amount_str.replace('.', '').replace(',', '')
+                    if cleaned_amount.isdigit():
+                         # Format as a currency string with dots for thousands
+                        data['total'] = f"${int(cleaned_amount):,}".replace(",", ".")
+                    else:
+                        data['total'] = amount_str # Fallback
 
         return data
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from PIL import Image, ImageTk
 from tkcalendar import Calendar
 import threading
+from ttkthemes import ThemedTk
 
 from printing import get_printers, print_pdf, resource_path
 from file_monitor import FileMonitor
@@ -18,7 +19,10 @@ class Application(tk.Frame):
         self.master = master
         self.master.title("Reimpresión de Boletas")
         self.master.minsize(700, 500)
+
+        # Configure the main frame to expand with the window
         self.pack(fill="both", expand=True)
+
         self.file_monitor = None
         self.found_files = {}
         self.create_widgets()
@@ -27,17 +31,22 @@ class Application(tk.Frame):
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
+        # The main frame will act as the container for all widgets
+        main_frame = ttk.Frame(self, padding="10")
+        main_frame.pack(fill="both", expand=True)
+
         try:
             logo_path = resource_path(os.path.join("assets", "logo.png"))
             logo_image = Image.open(logo_path)
             logo_image = logo_image.resize((250, 60), Image.Resampling.LANCZOS)
             self.logo_photo = ImageTk.PhotoImage(logo_image)
-            logo_label = ttk.Label(self, image=self.logo_photo)
+            # Themed labels automatically adapt, no need for background color
+            logo_label = ttk.Label(main_frame, image=self.logo_photo)
             logo_label.pack(pady=10)
         except Exception as e:
             print(f"No se pudo cargar el logo: {e}")
 
-        control_frame = ttk.Frame(self)
+        control_frame = ttk.Frame(main_frame)
         control_frame.pack(padx=10, pady=5, fill="x")
 
         try:
@@ -50,10 +59,10 @@ class Application(tk.Frame):
             self.browse_button = ttk.Button(control_frame, text="Seleccionar Carpeta", command=self.browse_folder)
         self.browse_button.pack(side="left", padx=(0, 10))
         self.folder_path = tk.StringVar()
-        self.folder_label = ttk.Label(control_frame, text="No se ha seleccionado ninguna carpeta", foreground="grey", anchor="w")
+        self.folder_label = ttk.Label(control_frame, text="No se ha seleccionado ninguna carpeta", style="TLabel")
         self.folder_label.pack(side="left", fill="x", expand=True)
 
-        date_frame = ttk.Frame(self)
+        date_frame = ttk.Frame(main_frame)
         date_frame.pack(padx=10, pady=5, fill="x")
 
         self.start_date_label = ttk.Label(date_frame, text="Desde:")
@@ -75,7 +84,7 @@ class Application(tk.Frame):
         self.filter_button = ttk.Button(date_frame, text="Buscar", command=self.update_pdf_list)
         self.filter_button.pack(side="left", padx=10)
 
-        pdf_list_frame = ttk.Frame(self)
+        pdf_list_frame = ttk.Frame(main_frame)
         pdf_list_frame.pack(padx=10, pady=10, fill="both", expand=True)
 
         columns = ("fecha", "boleta", "total")
@@ -91,15 +100,15 @@ class Application(tk.Frame):
 
         self.pdf_tree.pack(fill="both", expand=True)
 
-        self.printer_frame = ttk.Frame(self)
-        self.printer_frame.pack(padx=10, pady=10, fill="x")
-        self.printer_label = ttk.Label(self.printer_frame, text="Seleccionar Impresora:")
+        printer_frame = ttk.Frame(main_frame)
+        printer_frame.pack(padx=10, pady=10, fill="x")
+        self.printer_label = ttk.Label(printer_frame, text="Seleccionar Impresora:")
         self.printer_label.pack(side="left")
-        self.printer_combo = ttk.Combobox(self.printer_frame, width=50, state="readonly")
+        self.printer_combo = ttk.Combobox(printer_frame, width=50, state="readonly")
         self.printer_combo.pack(side="left", padx=5, expand=True, fill="x")
         self.printer_combo.bind("<<ComboboxSelected>>", self.on_printer_select)
 
-        self.reprint_button = ttk.Button(self, text="Reimprimir", command=self.reprint_selected_pdf)
+        self.reprint_button = ttk.Button(main_frame, text="Reimprimir", command=self.reprint_selected_pdf)
         self.reprint_button.pack(pady=10)
 
     def pick_date(self, date_var):
@@ -131,7 +140,7 @@ class Application(tk.Frame):
         folder, printer = load_config()
         if folder and os.path.isdir(folder):
             self.folder_path.set(folder)
-            self.folder_label.config(text=folder, foreground="black")
+            self.folder_label.config(text=folder)
             self.update_pdf_list()
             self.start_monitoring(folder)
         if printer and printer in self.printer_combo['values']:
@@ -141,7 +150,7 @@ class Application(tk.Frame):
         folder_selected = filedialog.askdirectory()
         if folder_selected:
             self.folder_path.set(folder_selected)
-            self.folder_label.config(text=folder_selected, foreground="black")
+            self.folder_label.config(text=folder_selected)
             self.update_pdf_list()
             self.start_monitoring(folder_selected)
             self.save_current_config()
@@ -192,11 +201,7 @@ class Application(tk.Frame):
                     except ValueError:
                         continue
 
-        # Sort the list by date in descending order (newest first)
-        # The key is the 'fecha' from the PDF data, which is in YYYY-MM-DD format.
         temp_file_list.sort(key=lambda item: item['data']['fecha'], reverse=True)
-
-        # Schedule the UI update in the main thread with the sorted list
         self.master.after(0, self.populate_tree, temp_file_list)
 
     def populate_tree(self, file_list):
@@ -247,6 +252,8 @@ class Application(tk.Frame):
         self.master.destroy()
 
 if __name__ == '__main__':
-    root = tk.Tk()
+    # Use ThemedTk to apply the dark theme
+    # The "equilux" theme is a good choice for a dark, modern look
+    root = ThemedTk(theme="equilux")
     app = Application(master=root)
     app.mainloop()

@@ -3,3 +3,4 @@ pyinstaller
 Pillow
 tkcalendar
 PyMuPDF
+ttkthemes
