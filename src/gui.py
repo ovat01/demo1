@@ -6,7 +6,6 @@ from datetime import datetime
 from PIL import Image, ImageTk
 from tkcalendar import Calendar
 import threading
-from ttkthemes import ThemedTk
 import fitz # PyMuPDF
 
 from printing import get_printers, print_pdf, resource_path

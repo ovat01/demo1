@@ -2,11 +2,30 @@ import fitz  # PyMuPDF
 import re
 from datetime import datetime
 
+def find_value_near_keyword(lines, keywords, regex, search_window=2):
+    """
+    Generic function to find a value using regex near a keyword in a list of lines.
+    It searches in a window of lines and returns the last match found, which is
+    often the correct one for receipt data.
+    """
+    for i, line in enumerate(lines):
+        if any(keyword.upper() in line.upper() for keyword in keywords):
+            # Define the search area (current line + next lines in window)
+            search_area = " ".join(lines[i : i + search_window])
+
+            # Find all matches in the search area
+            matches = re.findall(regex, search_area)
+
+            if matches:
+                # The last match in the vicinity of the keyword is usually the correct value.
+                return matches[-1]
+    return None
+
 def extract_data_from_pdf(file_path):
     """
-    Opens a PDF and extracts data with a highly flexible line-by-line analysis.
-    It looks for keywords and then finds the relevant data on the same line,
-    making it robust against formatting variations.
+    Opens a PDF and extracts key data by searching for keywords and then
+    applying regular expressions in the vicinity of those keywords. This approach
+    is robust to variations in PDF layout.
     """
     data = {
         'boleta': 'No encontrado',
@@ -20,43 +39,37 @@ def extract_data_from_pdf(file_path):
             full_text += page.get_text("text")
         doc.close()
 
-        lines = full_text.split('\n')
+        # Split text into clean lines (no leading/trailing whitespace)
+        lines = [line.strip() for line in full_text.split('\n') if line.strip()]
 
-        for line in lines:
-            line_upper = line.upper()
+        # --- Extract Boleta ---
+        # Looks for a number, which can include a hyphen (e.g., 001-12345)
+        boleta_num = find_value_near_keyword(lines, ['BOLETA'], r'\d+(?:-\d+)?')
+        if boleta_num:
+            data['boleta'] = boleta_num
 
-            # --- Find Boleta ---
-            if 'BOLETA' in line_upper:
-                # Find the last sequence of digits on the same line
-                numbers = re.findall(r'\d+', line)
-                if numbers:
-                    data['boleta'] = numbers[-1]
+        # --- Extract Fecha ---
+        # Looks for a date in dd-mm-yyyy or dd/mm/yyyy format
+        fecha_str = find_value_near_keyword(lines, ['FECHA'], r'\d{2}[-/]\d{2}[-/]\d{4}')
+        if fecha_str:
+            try:
+                # Normalize date separator and parse
+                date_obj = datetime.strptime(fecha_str.replace('/', '-'), '%d-%m-%Y')
+                data['fecha'] = date_obj.strftime('%Y-%m-%d')
+            except ValueError:
+                data['fecha'] = 'Fecha inválida'
 
-            # --- Find Fecha ---
-            if 'FECHA' in line_upper:
-                # Find a date pattern on the same line
-                match = re.search(r'(\d{2}[-/]\d{2}[-/]\d{4})', line)
-                if match:
-                    try:
-                        date_str = match.group(1).replace('/', '-')
-                        date_obj = datetime.strptime(date_str, '%d-%m-%Y')
-                        data['fecha'] = date_obj.strftime('%Y-%m-%d')
-                    except ValueError:
-                        pass # Ignore invalid date formats
+        # --- Extract Monto Total ---
+        # Looks for a monetary value (digits, dots, commas)
+        total_keywords = ['MONTO TOTAL', 'TOTAL A PAGAR', 'TOTAL']
+        total_str = find_value_near_keyword(lines, total_keywords, r'[\d.,]+')
+        if total_str:
+            # Clean the string by removing formatting for conversion
+            cleaned_amount = total_str.replace('.', '').replace(',', '')
+            if cleaned_amount.isdigit():
+                # Re-format as currency with a dot for the thousands separator
+                data['total'] = f"${int(cleaned_amount):,}".replace(",", ".")
 
-            # --- Find Monto Total ---
-            # Check for multiple variations of the "total" keyword
-            total_keywords = ['MONTO TOTAL', 'TOTAL A PAGAR', 'TOTAL']
-            if any(keyword in line_upper for keyword in total_keywords):
-                 # Find what looks like a currency value on the same line
-                match = re.search(r'[\d.,]+', line)
-                if match:
-                    amount_str = match.group(0).strip()
-                    # Clean the string for conversion
-                    cleaned_amount = amount_str.replace('.', '').replace(',', '')
-                    if cleaned_amount.isdigit():
-                         # Format with dots for thousands, e.g., $60.450
-                        data['total'] = f"${int(cleaned_amount):,}".replace(",", ".")
         return data
 
     except Exception as e:
