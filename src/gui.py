@@ -6,6 +6,8 @@ from datetime import datetime
 from PIL import Image, ImageTk
 from tkcalendar import Calendar
 import threading
+from ttkthemes import ThemedTk
+import fitz # PyMuPDF
 
 from printing import get_printers, print_pdf, resource_path
 from file_monitor import FileMonitor
@@ -80,6 +82,10 @@ class Application(tk.Frame):
         self.filter_button = ttk.Button(date_frame, text="Buscar", command=self.update_pdf_list)
         self.filter_button.pack(side="left", padx=10)
 
+        self.force_rescan = tk.BooleanVar()
+        self.rescan_check = ttk.Checkbutton(date_frame, text="Forzar Re-Análisis", variable=self.force_rescan)
+        self.rescan_check.pack(side="left", padx=10)
+
         pdf_list_frame = ttk.Frame(main_frame)
         pdf_list_frame.pack(padx=10, pady=10, fill="both", expand=True)
 
@@ -93,10 +99,9 @@ class Application(tk.Frame):
         self.pdf_tree.column("total", width=150, anchor="e")
         self.pdf_tree.pack(fill="both", expand=True)
 
-        # --- Progress Bar ---
         self.progress_bar = ttk.Progressbar(main_frame, orient="horizontal", mode="determinate")
         self.progress_bar.pack(fill="x", padx=10, pady=5)
-        self.progress_bar.pack_forget() # Hidden by default
+        self.progress_bar.pack_forget()
 
         printer_frame = ttk.Frame(main_frame)
         printer_frame.pack(padx=10, pady=10, fill="x")
@@ -106,8 +111,41 @@ class Application(tk.Frame):
         self.printer_combo.pack(side="left", padx=5, expand=True, fill="x")
         self.printer_combo.bind("<<ComboboxSelected>>", self.on_printer_select)
 
-        self.reprint_button = ttk.Button(main_frame, text="Reimprimir", command=self.reprint_selected_pdf)
-        self.reprint_button.pack(pady=10)
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=10)
+
+        self.reprint_button = ttk.Button(button_frame, text="Reimprimir", command=self.reprint_selected_pdf)
+        self.reprint_button.pack(side="left", padx=5)
+
+        self.diag_button = ttk.Button(button_frame, text="Ver Texto del PDF", command=self.show_pdf_text)
+        self.diag_button.pack(side="left", padx=5)
+
+    def show_pdf_text(self):
+        selected_item = self.pdf_tree.focus()
+        if not selected_item:
+            messagebox.showwarning("Selección Requerida", "Por favor, seleccione una boleta para ver su texto.")
+            return
+
+        full_path = self.found_files[selected_item]['path']
+
+        try:
+            doc = fitz.open(full_path)
+            full_text = ""
+            for page in doc:
+                full_text += page.get_text("text")
+            doc.close()
+
+            diag_window = tk.Toplevel(self.master)
+            diag_window.title(f"Texto extraído de: {os.path.basename(full_path)}")
+            diag_window.geometry("600x400")
+
+            text_area = tk.Text(diag_window, wrap="word")
+            text_area.insert("1.0", full_text)
+            text_area.config(state="disabled")
+            text_area.pack(expand=True, fill="both")
+
+        except Exception as e:
+            messagebox.showerror("Error de Lectura", f"No se pudo leer el archivo PDF:\n{e}")
 
     def pick_date(self, date_var):
         top = tk.Toplevel(self.master)
@@ -164,7 +202,7 @@ class Application(tk.Frame):
         self.found_files.clear()
         self.filter_button.config(state="disabled")
 
-        self.progress_bar.pack(fill="x", padx=10, pady=5) # Show progress bar
+        self.progress_bar.pack(fill="x", padx=10, pady=5)
         self.progress_bar["value"] = 0
 
         threading.Thread(target=self._background_pdf_search, daemon=True).start()
@@ -185,7 +223,8 @@ class Application(tk.Frame):
             self.master.after(0, self.on_search_complete)
             return
 
-        cache = load_cache(folder)
+        force_rescan = self.force_rescan.get()
+        cache = {} if force_rescan else load_cache(folder)
         updated_cache = False
 
         all_pdfs = [os.path.join(r, f) for r, _, fs in os.walk(folder) for f in fs if f.lower().endswith('.pdf')]
@@ -196,7 +235,7 @@ class Application(tk.Frame):
         for i, full_path in enumerate(all_pdfs):
             cached_file = cache.get(full_path)
 
-            if not cached_file or is_file_modified(full_path, cached_file.get("mtime", "0")):
+            if force_rescan or not cached_file or is_file_modified(full_path, cached_file.get("mtime", "0")):
                 pdf_data = extract_data_from_pdf(full_path)
                 if 'error' not in pdf_data:
                     cache[full_path] = {"mtime": str(os.path.getmtime(full_path)), "data": pdf_data}
@@ -212,15 +251,14 @@ class Application(tk.Frame):
                 except (ValueError, TypeError):
                     continue
 
-            # Update progress bar in the main thread
             self.master.after(0, self.progress_bar.config, {"value": i + 1})
 
-        if updated_cache:
+        if updated_cache or force_rescan:
             save_cache(folder, cache)
 
         temp_file_list.sort(key=lambda item: item['data']['fecha'], reverse=True)
         self.master.after(0, self.populate_tree, temp_file_list)
-        self.master.after(100, self.on_search_complete) # Delay hiding to ensure UI updates
+        self.master.after(100, self.on_search_complete)
 
     def populate_tree(self, file_list):
         for i in self.pdf_tree.get_children():
@@ -234,7 +272,7 @@ class Application(tk.Frame):
             self.found_files[item_id] = {'path': item['path'], 'data': pdf_data}
 
     def on_search_complete(self):
-        self.progress_bar.pack_forget() # Hide progress bar
+        self.progress_bar.pack_forget()
         self.filter_button.config(state="normal")
 
     def reprint_selected_pdf(self):
