@@ -12,6 +12,7 @@ from printing import get_printers, print_pdf, resource_path
 from file_monitor import FileMonitor
 from config import save_config, load_config
 from pdf_parser import extract_data_from_pdf
+from cache_manager import load_cache, save_cache, is_file_modified
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -20,7 +21,6 @@ class Application(tk.Frame):
         self.master.title("Reimpresión de Boletas")
         self.master.minsize(700, 500)
 
-        # Configure the main frame to expand with the window
         self.pack(fill="both", expand=True)
 
         self.file_monitor = None
@@ -31,7 +31,6 @@ class Application(tk.Frame):
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
-        # The main frame will act as the container for all widgets
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill="both", expand=True)
 
@@ -40,7 +39,6 @@ class Application(tk.Frame):
             logo_image = Image.open(logo_path)
             logo_image = logo_image.resize((250, 60), Image.Resampling.LANCZOS)
             self.logo_photo = ImageTk.PhotoImage(logo_image)
-            # Themed labels automatically adapt, no need for background color
             logo_label = ttk.Label(main_frame, image=self.logo_photo)
             logo_label.pack(pady=10)
         except Exception as e:
@@ -55,7 +53,6 @@ class Application(tk.Frame):
             self.folder_icon = ImageTk.PhotoImage(folder_icon_image)
             self.browse_button = ttk.Button(control_frame, image=self.folder_icon, command=self.browse_folder)
         except Exception as e:
-            print(f"Icono de carpeta no encontrado, usando texto: {e}")
             self.browse_button = ttk.Button(control_frame, text="Seleccionar Carpeta", command=self.browse_folder)
         self.browse_button.pack(side="left", padx=(0, 10))
         self.folder_path = tk.StringVar()
@@ -89,16 +86,18 @@ class Application(tk.Frame):
 
         columns = ("fecha", "boleta", "total")
         self.pdf_tree = ttk.Treeview(pdf_list_frame, columns=columns, show="headings")
-
         self.pdf_tree.heading("fecha", text="Fecha")
         self.pdf_tree.heading("boleta", text="Boleta")
         self.pdf_tree.heading("total", text="Monto Total")
-
         self.pdf_tree.column("fecha", width=120, anchor="center")
         self.pdf_tree.column("boleta", width=200, anchor="center")
         self.pdf_tree.column("total", width=150, anchor="e")
-
         self.pdf_tree.pack(fill="both", expand=True)
+
+        # --- Progress Bar ---
+        self.progress_bar = ttk.Progressbar(main_frame, orient="horizontal", mode="determinate")
+        self.progress_bar.pack(fill="x", padx=10, pady=5)
+        self.progress_bar.pack_forget() # Hidden by default
 
         printer_frame = ttk.Frame(main_frame)
         printer_frame.pack(padx=10, pady=10, fill="x")
@@ -118,8 +117,7 @@ class Application(tk.Frame):
         except ValueError:
             current_date = datetime.now()
 
-        cal = Calendar(top, selectmode='day', date_pattern='dd-mm-y',
-                       year=current_date.year, month=current_date.month, day=current_date.day)
+        cal = Calendar(top, selectmode='day', date_pattern='dd-mm-y', year=current_date.year, month=current_date.month, day=current_date.day)
         cal.pack(pady=20)
 
         def set_date_and_close():
@@ -166,12 +164,16 @@ class Application(tk.Frame):
             self.pdf_tree.delete(i)
         self.found_files.clear()
         self.filter_button.config(state="disabled")
+
+        self.progress_bar.pack(fill="x", padx=10, pady=5) # Show progress bar
+        self.progress_bar["value"] = 0
+
         threading.Thread(target=self._background_pdf_search, daemon=True).start()
 
     def _background_pdf_search(self):
         folder = self.folder_path.get()
         if not folder or not os.path.isdir(folder):
-            self.master.after(0, lambda: self.filter_button.config(state="normal"))
+            self.master.after(0, self.on_search_complete)
             return
 
         try:
@@ -180,29 +182,46 @@ class Application(tk.Frame):
             start_date = datetime.strptime(start_date_str, '%d-%m-%Y').date()
             end_date = datetime.strptime(end_date_str, '%d-%m-%Y').date()
         except ValueError:
-            self.master.after(0, lambda: messagebox.showerror("Fecha Inválida", "El formato de fecha debe ser DD-MM-YYYY."))
-            self.master.after(0, lambda: self.filter_button.config(state="normal"))
+            messagebox.showerror("Fecha Inválida", "El formato de fecha debe ser DD-MM-YYYY.")
+            self.master.after(0, self.on_search_complete)
             return
 
+        cache = load_cache(folder)
+        updated_cache = False
+
+        all_pdfs = [os.path.join(r, f) for r, _, fs in os.walk(folder) for f in fs if f.lower().endswith('.pdf')]
+        total_files = len(all_pdfs)
+        self.master.after(0, self.progress_bar.config, {"maximum": total_files})
+
         temp_file_list = []
-        for root, _, files in os.walk(folder):
-            for file in files:
-                if file.lower().endswith('.pdf'):
-                    full_path = os.path.join(root, file)
-                    pdf_data = extract_data_from_pdf(full_path)
+        for i, full_path in enumerate(all_pdfs):
+            cached_file = cache.get(full_path)
 
-                    if 'error' in pdf_data or pdf_data['fecha'] == 'No encontrado' or pdf_data['fecha'] == 'Fecha inválida':
-                        continue
+            if not cached_file or is_file_modified(full_path, cached_file.get("mtime", "0")):
+                pdf_data = extract_data_from_pdf(full_path)
+                if 'error' not in pdf_data:
+                    cache[full_path] = {"mtime": str(os.path.getmtime(full_path)), "data": pdf_data}
+                    updated_cache = True
+            else:
+                pdf_data = cached_file["data"]
 
-                    try:
-                        file_date = datetime.strptime(pdf_data['fecha'], '%Y-%m-%d').date()
-                        if start_date <= file_date <= end_date:
-                            temp_file_list.append({'path': full_path, 'data': pdf_data})
-                    except ValueError:
-                        continue
+            if pdf_data and pdf_data.get('fecha') not in ['No encontrado', 'Fecha inválida']:
+                try:
+                    file_date = datetime.strptime(pdf_data['fecha'], '%Y-%m-%d').date()
+                    if start_date <= file_date <= end_date:
+                        temp_file_list.append({'path': full_path, 'data': pdf_data})
+                except (ValueError, TypeError):
+                    continue
+
+            # Update progress bar in the main thread
+            self.master.after(0, self.progress_bar.config, {"value": i + 1})
+
+        if updated_cache:
+            save_cache(folder, cache)
 
         temp_file_list.sort(key=lambda item: item['data']['fecha'], reverse=True)
         self.master.after(0, self.populate_tree, temp_file_list)
+        self.master.after(100, self.on_search_complete) # Delay hiding to ensure UI updates
 
     def populate_tree(self, file_list):
         for i in self.pdf_tree.get_children():
@@ -212,10 +231,11 @@ class Application(tk.Frame):
         for item in file_list:
             pdf_data = item['data']
             display_date = datetime.strptime(pdf_data['fecha'], '%Y-%m-%d').strftime('%d-%m-%Y')
-
             item_id = self.pdf_tree.insert("", "end", values=(display_date, pdf_data['boleta'], pdf_data['total']))
             self.found_files[item_id] = {'path': item['path'], 'data': pdf_data}
 
+    def on_search_complete(self):
+        self.progress_bar.pack_forget() # Hide progress bar
         self.filter_button.config(state="normal")
 
     def reprint_selected_pdf(self):
@@ -252,8 +272,6 @@ class Application(tk.Frame):
         self.master.destroy()
 
 if __name__ == '__main__':
-    # Use ThemedTk to apply the dark theme
-    # The "equilux" theme is a good choice for a dark, modern look
     root = ThemedTk(theme="equilux")
     app = Application(master=root)
     app.mainloop()
