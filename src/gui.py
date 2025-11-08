@@ -6,7 +6,6 @@ from datetime import datetime
 from PIL import Image, ImageTk
 from tkcalendar import Calendar
 import threading
-from ttkthemes import ThemedTk
 
 from printing import get_printers, print_pdf, resource_path
 from file_monitor import FileMonitor
@@ -270,8 +269,3 @@ class Application(tk.Frame):
         if self.file_monitor:
             self.file_monitor.stop()
         self.master.destroy()
-
-if __name__ == '__main__':
-    root = ThemedTk(theme="equilux")
-    app = Application(master=root)
-    app.mainloop()

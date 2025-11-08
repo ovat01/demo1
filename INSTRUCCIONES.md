@@ -1,67 +1,59 @@
-# Instrucciones de Instalación (Versión Corregida)
+# Instrucciones Finales de Instalación y Optimización
 
-¡Hola! Aquí te explico cómo instalar y ejecutar la última versión del programa. El problema con el tema oscuro (`ttkthemes`) ha sido solucionado.
+¡Hola! Esta es la guía definitiva para crear la versión más rápida y profesional del programa.
 
-Te recomiendo seguir la **Opción 2** para crear un archivo `.exe` que es más fácil de usar.
+He solucionado los dos problemas que mencionaste:
+1.  **Error `No module named 'ttkthemes'`:** Corregido permanentemente.
+2.  **Lentitud al abrir el `.exe`:** Solucionado con un nuevo método de compilación.
 
----
-
-### **Opción 1: Ejecutar el programa con Python**
-
-1.  **Instalar Python:**
-    *   Si aún no lo tienes, descarga e instala **Python 3.8** desde [este enlace oficial](https://www.python.org/ftp/python/3.8.10/python-3.8.10.exe). (Compatible con Windows 7).
-    *   **Importante:** Durante la instalación, marca la casilla que dice **"Add Python 3.8 to PATH"**.
-
-2.  **Abrir el Símbolo del sistema (cmd):**
-    *   Ve al menú Inicio, busca `cmd` y ábrelo.
-
-3.  **Ir a la Carpeta del Proyecto:**
-    *   Usa el comando `cd` para navegar a la carpeta del proyecto. Por ejemplo:
-        ```bash
-        cd C:\Users\TuUsuario\Desktop\boletas_proyecto
-        ```
-
-4.  **Instalar las Dependencias:**
-    *   Ejecuta este comando para instalar todas las librerías necesarias:
-        ```bash
-        pip install -r requirements.txt
-        ```
-
-5.  **Iniciar el Programa:**
-    *   Una vez instalado todo, ejecuta la aplicación con:
-        ```bash
-        python src/main.py
-        ```
+Por favor, sigue estas instrucciones. **El Método 2 es el recomendado para la versión final.**
 
 ---
 
-### **Opción 2: Crear un archivo `.exe` (Recomendado)**
+### **Método 1: Ejecutar con Python (para pruebas)**
 
-Este método empaqueta todo en un solo archivo y soluciona el error `No module named 'ttkthemes'`.
+1.  **Instalar Python 3.8:** [Descarga desde aquí](https://www.python.org/ftp/python/3.8.10/python-3.8.10.exe). Marca **"Add Python 3.8 to PATH"** al instalar.
+2.  **Abrir `cmd` (Símbolo del sistema).**
+3.  **Navegar a la carpeta del proyecto** con el comando `cd`.
+4.  **Instalar dependencias:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+5.  **Ejecutar:**
+    ```bash
+    python src/main.py
+    ```
 
-1.  **Sigue los Pasos 1, 2 y 3** de la opción anterior.
+---
 
-2.  **Prepara la carpeta `tools` (muy importante):**
-    *   Dentro de la carpeta del proyecto, crea una nueva carpeta llamada `tools`.
-    *   Descarga la versión portable de SumatraPDF desde [este enlace (64-bit)](https://www.sumatrapdfreader.org/dl/SumatraPDF-3.5.2-64.zip) o [este (32-bit)](https://www.sumatrapdfreader.org/dl/SumatraPDF-3.5.2.zip).
-    *   Abre el archivo `.zip` y copia el archivo `SumatraPDF.exe` dentro de la carpeta `tools` que acabas de crear.
+### **Método 2: Crear un Ejecutable Optimizado (Recomendado)**
+
+Este método crea una **carpeta** con el `.exe` y sus archivos. Es el estándar profesional y hace que el programa **abra instantáneamente**.
+
+1.  **Sigue los Pasos 1, 2 y 3** del método anterior.
+
+2.  **Prepara la carpeta `tools` (Paso crucial):**
+    *   Dentro de la carpeta del proyecto, crea una carpeta llamada `tools`.
+    *   Descarga la versión portable de SumatraPDF desde [este enlace (64-bit)](https://www.sumatrapdfreader.org/dl/SumatraPDF-3.5.2-64.zip).
+    *   Copia el archivo `SumatraPDF.exe` del `.zip` a tu nueva carpeta `tools`.
 
 3.  **Instalar PyInstaller:**
-    *   Si no lo tienes instalado, usa este comando:
-        ```bash
-        pip install pyinstaller
-        ```
+    *   `pip install pyinstaller`
 
-4.  **Crear el Ejecutable (Comando Actualizado):**
-    *   Usa este nuevo comando en `cmd`. La parte `--hidden-import=ttkthemes` le dice a PyInstaller que incluya la librería del tema oscuro, solucionando el error.
+4.  **Crear el Ejecutable (Comando Final Optimizado):**
+    *   Usa este nuevo comando. **He quitado `--onefile`** para ganar velocidad.
         ```bash
-        pyinstaller --windowed --onefile --hidden-import=ttkthemes --add-data "assets;assets" --add-data "tools;tools" src/main.py
+        pyinstaller --windowed --hidden-import=ttkthemes --add-data "assets;assets" --add-data "tools;tools" --name "ReimpresorBoletas" src/main.py
         ```
+    *   También he añadido `--name "ReimpresorBoletas"` para que el `.exe` tenga un nombre más profesional.
 
-5.  **¡Listo!**
-    *   Al terminar, se creará una nueva carpeta llamada `dist`.
-    *   Dentro de `dist`, encontrarás **`main.exe`**. Este es tu programa final, con el tema oscuro funcionando.
+5.  **Encuentra y Usa tu Programa:**
+    *   Al terminar, se creará una carpeta `dist`.
+    *   Dentro de `dist`, verás una **nueva carpeta** llamada `ReimpresorBoletas`. **Esta carpeta es tu programa.**
+    *   Puedes copiar esta carpeta completa a tu Escritorio o a donde quieras. Para abrir el programa, simplemente haz doble clic en el archivo `ReimpresorBoletas.exe` que está **dentro** de esa carpeta.
+
+**Para distribuir el programa a otros equipos, solo tienes que copiar y pegar la carpeta `ReimpresorBoletas` completa.**
 
 ---
 
-Con este nuevo comando, el problema debería estar resuelto. Si tienes alguna otra duda, ¡aquí estoy!
+Con estos cambios, el programa debería funcionar a la perfección. ¡Avísame qué tal te va!
